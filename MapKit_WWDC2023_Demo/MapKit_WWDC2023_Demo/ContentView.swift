@@ -92,6 +92,8 @@ struct ContentView: View {
             MapPitchButton()
             /// 回到User Location
             MapUserLocationButton()
+            /// 放大所小時顯示比例尺
+            MapScaleView()
         }
     }
 }
