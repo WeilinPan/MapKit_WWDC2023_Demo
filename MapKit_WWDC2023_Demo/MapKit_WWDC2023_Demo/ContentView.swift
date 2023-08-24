@@ -15,6 +15,10 @@ struct ContentView: View {
     @State private var results = [MKMapItem]()
     @State private var mapSelection: MKMapItem?
     @State private var showDetails: Bool = false
+    @State private var getDirections: Bool = false
+    @State private var routeDisplaying: Bool = false
+    @State private var route: MKRoute?
+    @State private var routeDestination: MKMapItem?
     
     var body: some View {
         Map(position: $cameraPosition, selection: $mapSelection) {
@@ -37,10 +41,22 @@ struct ContentView: View {
             }
             
             ForEach(results, id: \.self) { item in
-                let placemark = item.placemark
-                Marker(placemark.name ?? "", coordinate: placemark.coordinate)
+                
+                if routeDisplaying {
+                    if item == routeDestination {
+                        let placemark = item.placemark
+                        Marker(placemark.name ?? "", coordinate: placemark.coordinate)
+                    }
+                } else {
+                    let placemark = item.placemark
+                    Marker(placemark.name ?? "", coordinate: placemark.coordinate)
+                }
             }
             
+            if let route {
+                MapPolyline(route.polyline)
+                    .stroke(.blue, lineWidth: 6)
+            }
         }
         .overlay(alignment: .top) {
             TextField("Search for a location...", text: $searchText)
@@ -55,11 +71,16 @@ struct ContentView: View {
                 await searchPlaces()
             }
         }
+        .onChange(of: getDirections, { oldValue, newValue in
+            if newValue {
+                fetchRoute()
+            }
+        })
         .onChange(of: mapSelection, { oldValue, newValue in
                 showDetails = newValue != nil
         })
         .sheet(isPresented: $showDetails, content: {
-            LocationDetailsView(mapSelection: $mapSelection, show: $showDetails)
+            LocationDetailsView(mapSelection: $mapSelection, show: $showDetails, getDirections: $getDirections)
                 .presentationDetents([.height(340)])
                 .presentationBackgroundInteraction(.enabled(upThrough: .height(340)))
                 .presentationCornerRadius(12)
@@ -83,6 +104,29 @@ extension ContentView {
         
         let results = try? await MKLocalSearch(request: request).start()
         self.results = results?.mapItems ?? []
+    }
+    
+    func fetchRoute() {
+        if let mapSelection {
+            let request = MKDirections.Request()
+            request.source = MKMapItem(placemark: .init(coordinate: .userLocation))
+            request.destination = mapSelection
+            
+            Task {
+                let result = try? await MKDirections(request: request).calculate()
+                route = result?.routes.first
+                routeDestination = mapSelection
+                
+                withAnimation(.snappy) {
+                    routeDisplaying = true
+                    showDetails = false
+                    
+                    if let rect = route?.polyline.boundingMapRect, routeDisplaying {
+                        cameraPosition = .rect(rect)
+                    }
+                }
+            }
+        }
     }
 }
 
